@@ -97,9 +97,20 @@ func (c Clock) FieldTimestamp(index int64, field int, fps Rational) uint32 {
 }
 
 // SampleTimestamp returns the RTP timestamp for the sample at the given
-// zero-based sample index for an audio (or other linear) stream, per
-// ST 2110-10 §7.7: timestamp = sampleIndex modulo 2^32 when the media clock rate
-// equals the RTP clock rate (the audio case, where both run at the sample rate).
-func (c Clock) SampleTimestamp(sampleIndex int64) uint32 {
-	return uint32(sampleIndex)
+// zero-based sample index of a linear (audio) stream sampled at sampleRate Hz,
+// per ST 2110-10 §7.7: the timestamp is the sampling instant in RTP-clock ticks,
+// i.e. floor(sampleIndex × Rate / sampleRate) modulo 2^32. When the RTP clock
+// rate equals the media sample rate (the AES67/ST 2110-30 case) this reduces to
+// sampleIndex, but the clock Rate is honored when the two differ. sampleRate of 0
+// is treated as equal to Rate (identity).
+func (c Clock) SampleTimestamp(sampleIndex int64, sampleRate uint32) uint32 {
+	if sampleRate == 0 || uint32(sampleRate) == c.Rate {
+		return uint32(sampleIndex)
+	}
+	v := new(big.Int).SetInt64(sampleIndex)
+	v.Mul(v, big.NewInt(int64(c.Rate)))
+	v.Quo(v, big.NewInt(int64(sampleRate)))
+	mod := new(big.Int).Lsh(big.NewInt(1), 32)
+	v.Mod(v, mod)
+	return uint32(v.Uint64())
 }
