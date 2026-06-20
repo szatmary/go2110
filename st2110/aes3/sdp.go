@@ -1,6 +1,7 @@
 package aes3
 
 import (
+	"math"
 	"strconv"
 	"time"
 
@@ -22,10 +23,16 @@ func (f Format) RTPMap(payloadType uint8) sdp.RTPMap {
 	}
 }
 
-// PTime returns the a=ptime value in milliseconds.
+// PTime returns the a=ptime value in milliseconds, matching the permitted values
+// of ST 2110-31 Table 1. Per the Table 3 Note the signalled packet time is
+// rounded to two decimal places with midway values rounded down, so a 125 µs
+// packet time is signalled as "0.12" (not "0.125"), a 44.1 kHz 6-period packet as
+// "0.14", and so on. Trailing zeros are trimmed (1 ms → "1").
 func (f Format) PTime() string {
 	ms := float64(f.PacketTime) / float64(time.Millisecond)
-	return strconv.FormatFloat(ms, 'g', -1, 64)
+	// Round half down to two decimal places (ceil(x-0.5) breaks ties downward).
+	rounded := math.Ceil(ms*100-0.5) / 100
+	return strconv.FormatFloat(rounded, 'g', -1, 64)
 }
 
 // MediaDescription builds an SDP media section for the AES3 stream.

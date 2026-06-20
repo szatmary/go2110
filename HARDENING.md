@@ -29,8 +29,8 @@ Tracks each defect, the change made, and the spec-pinned regression test.
 - [x] **A2** Removed bogus `PacketTime250us`/`333us`; comment now cites §7 Table 2 accurately (only 1 ms / 125 µs). Test: `TestA2_BogusPacketTimesRemoved`.
 
 ## aes3 (ST 2110-31)
-- [ ] **E1** ptime emits 0.12 not 0.125.
-- [ ] **E2** ptime/level validation.
+- [x] **E1** `PTime` rounds to 2 dp with midway-down → 48k/125µs emits "0.12" (Table 1 / Table 3 note). Test: `TestE1_PTime0_12`.
+- [x] **E2** `Validate` enforces Table 1 (rate, periods) + per-mode Subframe-sequence ceiling; `ConformanceLevels` represents §7 Table 3 (A/AX/B/BX/C/CX/D/DX) in `levels.go`. Tests: `TestE2_ValidatePacketTime`, `TestE2_ConformanceLevels`.
 
 ## anc (ST 2110-40 / RFC 8331)
 - [ ] **N1** Marker-bit API + compliant keep-alive (ANC_Count 0, marker set).

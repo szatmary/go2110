@@ -18,8 +18,9 @@ const SubframeSize = 4
 
 // Errors for AES3 packing.
 var (
-	ErrBadChannels   = errors.New("st2110/aes3: number of subframe sequences must be a positive even number")
+	ErrBadChannels   = errors.New("st2110/aes3: number of subframe sequences must be a positive even number within the level ceiling")
 	ErrBadRate       = errors.New("st2110/aes3: unsupported sampling rate")
+	ErrBadPacketTime = errors.New("st2110/aes3: packet time is not a permitted ST 2110-31 Table 1 value for the rate")
 	ErrBadPacket     = errors.New("st2110/aes3: payload not a whole number of AM824 subframes")
 	ErrSubframeAlign = errors.New("st2110/aes3: subframe count not a multiple of the channel count")
 )
@@ -98,7 +99,11 @@ type Format struct {
 	PacketTime time.Duration
 }
 
-// Validate checks the format against ST 2110-31 §5.5/§6.1.
+// Validate checks the format against ST 2110-31 §5.5/§6.1 and the permitted
+// packet times of Table 1: the sampling rate must be 44100/48000/96000 Hz, the
+// subframe-sequence count must be a positive even number not exceeding the
+// Table 3 ceiling for the mode, and the packet time must resolve to one of the
+// Table 1 (rate, periods) combinations.
 func (f Format) Validate() error {
 	switch f.SampleRate {
 	case 44100, 48000, 96000:
@@ -106,6 +111,13 @@ func (f Format) Validate() error {
 		return ErrBadRate
 	}
 	if f.Channels <= 0 || f.Channels%2 != 0 {
+		return ErrBadChannels
+	}
+	m, ok := f.modeFor()
+	if !ok {
+		return ErrBadPacketTime
+	}
+	if f.Channels > m.maxSeqs {
 		return ErrBadChannels
 	}
 	return nil
