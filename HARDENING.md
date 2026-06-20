@@ -12,8 +12,8 @@ Tracks each defect, the change made, and the spec-pinned regression test.
 - [x] **V6** Sample-order on-wire vectors for 4:4:4, 4:2:0, RGB, Key (`frame_v6_test.go`, pinned to RFC 4175 §6.2). Test: `TestV6_SampleOrderVectors`.
 
 ## ttml (ST 2110-43 / RFC 8759)
-- [ ] **T1** SDP `codecs=<profile>` (MUST).
-- [ ] **T2** Depacketize validates timestamp + consecutive seq, zero-length docs.
+- [x] **T1** SDP `codecs=<profile>` (MUST) — `MediaDescription` now emits `a=fmtp:<pt> charset=utf-8;codecs=<profile>` (default im2t), exact per RFC 8759 Figure 5. Test: `TestT1_SDPCodecs`.
+- [x] **T2** Depacketize validates shared timestamp (§4.2), consecutive seq (§8), rejects zero-length docs (§6). Errors `ErrTimestampMismatch`/`ErrSequenceGap`/`ErrEmptyDocument`. Test: `TestT2_DepacketizeValidation`.
 
 ## cv22 (ST 2110-22)
 - [ ] **C1** exactframerate fmtp param round-trips; stop swallowing parse error.
