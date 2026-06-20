@@ -40,9 +40,14 @@ func (f Format) FMTP(payloadType uint8) sdp.FormatParameters {
 	if f.TCS != "" {
 		fp.Set("TCS", f.TCS)
 	}
-	if f.Colorimetry != "" {
-		fp.Set("colorimetry", f.Colorimetry)
+	// colorimetry is a Required media-type parameter (ST 2110-20 §7.2); it must
+	// always appear. When unset, default to BT709 (the common HD colorimetry)
+	// rather than emitting a non-conformant colorimetry-less fmtp.
+	colorimetry := f.Colorimetry
+	if colorimetry == "" {
+		colorimetry = "BT709"
 	}
+	fp.Set("colorimetry", colorimetry)
 	if f.Range != "" {
 		fp.Set("RANGE", f.Range)
 	}
