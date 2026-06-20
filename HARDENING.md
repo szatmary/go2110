@@ -37,8 +37,8 @@ Tracks each defect, the change made, and the spec-pinned regression test.
 - [x] **N2** Marshal/Unmarshal reject F=0b01 (`ErrInvalidField`); Unmarshal verifies the Checksum_Word (`ErrChecksum`) instead of discarding it. Tests: `TestN2_RejectF01`, `TestN2_VerifyChecksum`.
 
 ## media (ST 2110-10)
-- [ ] **M1** SampleTimestamp honors Rate.
-- [ ] **M2** Wire clock-derived timestamps into the sender.
+- [x] **M1** `SampleTimestamp(sampleIndex, sampleRate)` honors the clock Rate: floor(idx×Rate/sampleRate) (§7.7). Test: `TestM1_SampleTimestampHonorsRate`.
+- [x] **M2** `PackedFrame.PacketizeFrame`/`PacketizeFrameFields` derive RTP timestamps through `media.Clock` (§7.6.1); a frame's packets all share the clock-derived timestamp. Tests: `TestM2_PacketizeFrameSharedClockTimestamp`, `TestM2_PacketizeFrameFieldsTimestamps`.
 
 ## sdp / rtp (stretch — S1)
 - [ ] **S1** RFC 7273 generality + 2-byte RTP extension vector.
