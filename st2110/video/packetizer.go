@@ -11,11 +11,22 @@ import (
 // CSRC list, no header extension).
 const rtpFixedHeaderLen = 12
 
+// udpHeaderLen is the size of the UDP header (RFC 768). ST 2110-10 §6.3 measures
+// the Standard/Extended UDP Size Limit against the complete UDP datagram, i.e.
+// the 8-octet UDP header + the RTP packet (header + payload). The per-packet
+// payload budget must therefore reserve both the UDP and RTP headers.
+const udpHeaderLen = 8
+
 // Errors for packetization.
 var (
 	ErrBudgetTooSmall = errors.New("st2110/video: UDP size limit too small for one pgroup")
 	ErrBPMAlignment   = errors.New("st2110/video: Block Packing Mode requires the 1260-octet payload to be a multiple of the pgroup size")
 	ErrBPMTooManyRows = errors.New("st2110/video: Block Packing Mode packet would need more than three SRD headers")
+	// ErrInterlacedUsePacketizeFields is returned by Packetize for interlaced or
+	// PsF formats: a single shared RTP timestamp is correct only for progressive
+	// frames (ST 2110-10 §7.6.1), so the two fields must be emitted with their own
+	// timestamps via PacketizeFields.
+	ErrInterlacedUsePacketizeFields = errors.New("st2110/video: interlaced/PsF format requires PacketizeFields (each field needs its own RTP timestamp)")
 )
 
 // PacketizeOptions controls RTP packetization of a frame.
@@ -56,7 +67,7 @@ type shaper struct {
 // newShaper validates the packing constraints for the frame.
 func (pf *PackedFrame) newShaper(opts PacketizeOptions) (shaper, error) {
 	s := shaper{
-		payloadBudget: pf.Format.maxRTPPacket(opts) - rtpFixedHeaderLen,
+		payloadBudget: pf.Format.maxRTPPacket(opts) - udpHeaderLen - rtpFixedHeaderLen,
 		og:            pf.PgroupOctets,
 		bpm:           pf.Format.PackingMode == PackingBPM,
 		bpmTarget:     BPMBlock * BPMBlocksPerPacket, // 1260
@@ -68,9 +79,10 @@ func (pf *PackedFrame) newShaper(opts PacketizeOptions) (shaper, error) {
 		if s.bpmTarget%s.og != 0 {
 			return shaper{}, ErrBPMAlignment
 		}
-		// BPM forbids the Extended UDP size limit (§6.3.3).
-		if s.payloadBudget+rtpFixedHeaderLen > StandardUDPLimit {
-			s.payloadBudget = StandardUDPLimit - rtpFixedHeaderLen
+		// BPM forbids the Extended UDP size limit (§6.3.3). The datagram size
+		// includes the UDP and RTP headers (§6.3).
+		if s.payloadBudget+rtpFixedHeaderLen+udpHeaderLen > StandardUDPLimit {
+			s.payloadBudget = StandardUDPLimit - udpHeaderLen - rtpFixedHeaderLen
 		}
 	}
 	return s, nil
@@ -84,6 +96,9 @@ func (pf *PackedFrame) newShaper(opts PacketizeOptions) (shaper, error) {
 // that each field receives its own RTP timestamp; Packetize emits all lines under
 // a single timestamp, which is correct only for progressive frames.
 func (pf *PackedFrame) Packetize(opts PacketizeOptions) ([]rtp.Packet, error) {
+	if pf.Format.Interlaced {
+		return nil, ErrInterlacedUsePacketizeFields
+	}
 	s, err := pf.newShaper(opts)
 	if err != nil {
 		return nil, err
