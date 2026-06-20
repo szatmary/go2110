@@ -33,8 +33,8 @@ Tracks each defect, the change made, and the spec-pinned regression test.
 - [x] **E2** `Validate` enforces Table 1 (rate, periods) + per-mode Subframe-sequence ceiling; `ConformanceLevels` represents §7 Table 3 (A/AX/B/BX/C/CX/D/DX) in `levels.go`. Tests: `TestE2_ValidatePacketTime`, `TestE2_ConformanceLevels`.
 
 ## anc (ST 2110-40 / RFC 8331)
-- [ ] **N1** Marker-bit API + compliant keep-alive (ANC_Count 0, marker set).
-- [ ] **N2** Reject F=0b01; verify Checksum on parse.
+- [x] **N1** `Packetize`/`KeepAlive` (`packetize.go`): marker bit on last ANC packet of field/frame; compliant keep-alive = ANC_Count 0 + marker set. Tests: `TestN1_MarkerBit`, `TestN1_KeepAlive`.
+- [x] **N2** Marshal/Unmarshal reject F=0b01 (`ErrInvalidField`); Unmarshal verifies the Checksum_Word (`ErrChecksum`) instead of discarding it. Tests: `TestN2_RejectF01`, `TestN2_VerifyChecksum`.
 
 ## media (ST 2110-10)
 - [ ] **M1** SampleTimestamp honors Rate.

@@ -43,6 +43,12 @@ var (
 	ErrTooManyANC   = errors.New("st2110/anc: more than 255 ANC data packets")
 	ErrDataCount    = errors.New("st2110/anc: User_Data_Words count exceeds 255")
 	ErrFieldRange   = errors.New("st2110/anc: header field value out of range")
+	// ErrInvalidField is returned for an F field value of 0b01, which RFC 8331
+	// §2.1 declares "is not valid".
+	ErrInvalidField = errors.New("st2110/anc: F field value 0b01 is not valid (RFC 8331 §2.1)")
+	// ErrChecksum is returned by Unmarshal when an ANC data packet's
+	// Checksum_Word does not match the ST 291-1 checksum of its words.
+	ErrChecksum = errors.New("st2110/anc: ANC data packet Checksum_Word mismatch")
 )
 
 // Packet is a single SMPTE ST 291-1 ANC data packet carried per RFC 8331 §2.1.
@@ -138,6 +144,9 @@ func Marshal(h PayloadHeader, packets []Packet) ([]byte, error) {
 	if len(packets) > 255 {
 		return nil, ErrTooManyANC
 	}
+	if h.F == 0b01 {
+		return nil, ErrInvalidField // RFC 8331 §2.1: 0b01 is not a valid F value
+	}
 	// ANC data region.
 	bw := &bitWriter{}
 	for i := range packets {
@@ -187,6 +196,9 @@ func Unmarshal(payload []byte) (PayloadHeader, []Packet, error) {
 		ExtendedSequenceNumber: binary.BigEndian.Uint16(payload[0:2]),
 		F:                      payload[5] >> 6,
 	}
+	if h.F == 0b01 {
+		return PayloadHeader{}, nil, ErrInvalidField // RFC 8331 §2.1
+	}
 	length := int(binary.BigEndian.Uint16(payload[2:4]))
 	count := int(payload[4])
 	data := payload[payloadHeaderLen:]
@@ -219,15 +231,26 @@ func Unmarshal(payload []byte) (PayloadHeader, []Packet, error) {
 		p.SDID = uint8(sdid)
 		n := int(dc & 0xFF) // actual count is the lower 8 bits
 		p.UserData = make([]uint16, n)
+		// Accumulate the 10-bit words for the ST 291-1 checksum (DID, SDID,
+		// Data_Count, then the User_Data_Words), as transmitted on the wire.
+		csInputs := make([]uint16, 0, 3+n)
+		csInputs = append(csInputs, uint16(did), uint16(sdid), uint16(dc))
 		for j := 0; j < n; j++ {
 			w, ok := br.read(10)
 			if !ok {
 				return PayloadHeader{}, nil, ErrShortPayload
 			}
 			p.UserData[j] = uint16(w)
+			csInputs = append(csInputs, uint16(w))
 		}
-		if _, ok := br.read(10); !ok { // Checksum_Word (validated separately)
+		cs, ok := br.read(10) // Checksum_Word
+		if !ok {
 			return PayloadHeader{}, nil, ErrShortPayload
+		}
+		// Verify the checksum against the carried words (RFC 8331 §2.1, §6.2:
+		// the Checksum_Word SHOULD be checked) rather than discarding it.
+		if uint16(cs) != Checksum10(csInputs...) {
+			return PayloadHeader{}, nil, ErrChecksum
 		}
 		br.alignTo(32) // skip word_align
 		packets = append(packets, p)
