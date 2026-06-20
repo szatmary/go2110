@@ -28,6 +28,7 @@ var (
 	ErrTooManySRD    = errors.New("st2110/video: more than three SRD headers")
 	ErrRowOutOfRange = errors.New("st2110/video: SRD row number exceeds 15 bits")
 	ErrOffOutOfRange = errors.New("st2110/video: SRD offset exceeds 15 bits")
+	ErrZeroLength    = errors.New("st2110/video: SRD Length 0 is permitted only as a single SRD header")
 )
 
 // SRDHeader is a single Sample Row Data header (ST 2110-20 §6.1.4):
@@ -84,6 +85,12 @@ func (p *PayloadHeader) Marshal() ([]byte, error) {
 	binary.BigEndian.PutUint16(buf[0:2], p.ExtendedSequenceNumber)
 	off := extSeqLen
 	for i, s := range p.SRDs {
+		// A Length of zero is permitted only as a lone SRD header carrying no
+		// sample data (ST 2110-20 §6.1.4); a zero-length segment within a
+		// multi-SRD packet has no valid interpretation.
+		if s.Length == 0 && len(p.SRDs) != 1 {
+			return nil, ErrZeroLength
+		}
 		if s.RowNumber > 0x7fff {
 			return nil, ErrRowOutOfRange
 		}
