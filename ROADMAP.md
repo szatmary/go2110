@@ -31,7 +31,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
 
 - [x] 5. **ST 2110-30** — PCM audio (AES67 profile): packetization, packet time,
       channel counts, SDP (`L16`/`L24`, `ptime`, `channel-order`).
-- [ ] 6. **ST 2110-40** — ancillary data (ST 291-1): ANC RTP payload, ANC packet
+- [x] 6. **ST 2110-40** — ancillary data (ST 291-1): ANC RTP payload, ANC packet
       headers (DID/SDID/DC/UDW + checksum), SDP (`smpte291`, `DID_SDID`).
 - [ ] 7. **ST 2110-21** — sender timing models (N / NL / W): traffic-shaping
       parameters, TROFF / CMAX / etc., compliance helpers.
