@@ -61,15 +61,6 @@ func BitrateKbpsFor(bytesPerFrame int, frameRate media.Rational) int {
 	return int((bits + den - 1) / den)
 }
 
-// frameRateAttr renders the a=framerate value: an integer when Den==1, otherwise
-// a decimal approximation (RFC 4566 permits <integer>.<fraction>).
-func (f Format) frameRateAttr() string {
-	if f.FrameRate.Den == 1 {
-		return strconv.FormatInt(f.FrameRate.Num, 10)
-	}
-	return strconv.FormatFloat(f.FrameRate.Float64(), 'g', -1, 64)
-}
-
 // RTPMap returns the a=rtpmap descriptor: "<subtype>/90000".
 func (f Format) RTPMap(payloadType uint8) sdp.RTPMap {
 	return sdp.RTPMap{PayloadType: payloadType, EncodingName: f.Subtype, ClockRate: RTPClockRate}
@@ -82,6 +73,12 @@ func (f Format) FMTP(payloadType uint8) sdp.FormatParameters {
 	fp.Params = append(fp.Params, f.Extra...)
 	fp.Set("width", strconv.Itoa(f.Width))
 	fp.Set("height", strconv.Itoa(f.Height))
+	// exactframerate is the authoritative frame-rate signalling (ST 2110-22 §7.4,
+	// inheriting the ST 2110-20 §7.2 syntax "Num/Den"): a round-trip-safe ratio,
+	// unlike the lossy decimal a=framerate.
+	if f.FrameRate.Num != 0 {
+		fp.Set("exactframerate", f.FrameRate.String())
+	}
 	fp.Set("TP", f.SenderType.TP())
 	if f.CMax > 0 {
 		fp.Set("CMAX", strconv.Itoa(f.CMax))
@@ -107,8 +104,11 @@ func (f Format) MediaDescription(port int, payloadType uint8) *sdp.MediaDescript
 		m.Bandwidth = append(m.Bandwidth, sdp.Bandwidth{Type: "AS", Value: uint64(f.BitrateKbps)})
 	}
 	m.SetAttribute("rtpmap", f.RTPMap(payloadType).String())
-	if f.FrameRate.Num != 0 {
-		m.SetAttribute("framerate", f.frameRateAttr())
+	// a=framerate (RFC 4566) is informative only and is emitted for integer
+	// rates; the authoritative rate is the exactframerate fmtp parameter, which
+	// also carries non-integer rates without loss.
+	if f.FrameRate.Den == 1 && f.FrameRate.Num != 0 {
+		m.SetAttribute("framerate", strconv.FormatInt(f.FrameRate.Num, 10))
 	}
 	m.SetAttribute("fmtp", f.FMTP(payloadType).String())
 	return m
@@ -127,14 +127,18 @@ func ParseMediaDescription(m *sdp.MediaDescription) (Format, error) {
 			f.BitrateKbps = int(b.Value)
 		}
 	}
-	if v, ok := m.GetAttribute("framerate"); ok {
-		if r, err := media.ParseExactFrameRate(v); err == nil {
-			f.FrameRate = r
-		}
-	}
 	fp, ok := m.FormatParameters()
 	if !ok {
 		return Format{}, ErrMissingParam
+	}
+	// Frame rate comes from the authoritative exactframerate fmtp parameter; a
+	// malformed value is a real error and must not be swallowed.
+	if v, ok := fp.Get("exactframerate"); ok {
+		r, err := media.ParseExactFrameRate(v)
+		if err != nil {
+			return Format{}, err
+		}
+		f.FrameRate = r
 	}
 	if v, ok := fp.Get("width"); ok {
 		f.Width, _ = strconv.Atoi(v)
@@ -159,7 +163,7 @@ func ParseMediaDescription(m *sdp.MediaDescription) (Format, error) {
 		f.SSN = v
 	}
 	// Preserve codec-specific parameters (anything that isn't an ST 2110-22 one).
-	known := map[string]bool{"width": true, "height": true, "TP": true, "CMAX": true, "SSN": true}
+	known := map[string]bool{"width": true, "height": true, "exactframerate": true, "TP": true, "CMAX": true, "SSN": true}
 	for _, p := range fp.Params {
 		if !known[p.Name] {
 			f.Extra = append(f.Extra, p)

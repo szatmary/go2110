@@ -34,7 +34,8 @@ func TestExampleMediaSection(t *testing.T) {
 	if v, _ := m.GetAttribute("framerate"); v != "25" {
 		t.Errorf("framerate = %q", v)
 	}
-	want := "96 profile=HQ; width=1920; height=1080; TP=2110TPW; SSN=ST2110-22:2022"
+	// exactframerate is the authoritative rate signalling (ST 2110-22 §7.4).
+	want := "96 profile=HQ; width=1920; height=1080; exactframerate=25; TP=2110TPW; SSN=ST2110-22:2022"
 	if v, _ := m.GetAttribute("fmtp"); v != want {
 		t.Errorf("fmtp =\n %q\nwant\n %q", v, want)
 	}
@@ -64,6 +65,10 @@ func TestRoundTrip(t *testing.T) {
 		got.SenderType != f.SenderType || got.CMax != f.CMax || got.SSN != f.SSN ||
 		got.BitrateKbps != f.BitrateKbps {
 		t.Fatalf("round-trip core mismatch:\n got %+v\nwant %+v", got, f)
+	}
+	// The non-integer frame rate must survive the round-trip (was lost as 0/0).
+	if got.FrameRate != f.FrameRate {
+		t.Fatalf("round-trip FrameRate = %v, want %v", got.FrameRate, f.FrameRate)
 	}
 	if len(got.Extra) != 2 || got.Extra[0].Name != "packetmode" || got.Extra[1].Name != "profile" {
 		t.Errorf("extra params = %+v", got.Extra)

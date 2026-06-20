@@ -16,7 +16,7 @@ Tracks each defect, the change made, and the spec-pinned regression test.
 - [x] **T2** Depacketize validates shared timestamp (§4.2), consecutive seq (§8), rejects zero-length docs (§6). Errors `ErrTimestampMismatch`/`ErrSequenceGap`/`ErrEmptyDocument`. Test: `TestT2_DepacketizeValidation`.
 
 ## cv22 (ST 2110-22)
-- [ ] **C1** exactframerate fmtp param round-trips; stop swallowing parse error.
+- [x] **C1** exactframerate fmtp param round-trips; parse error surfaced (no longer swallowed); `TestRoundTrip` now compares `FrameRate`. Tests: `TestC1_FractionalFrameRateRoundTrip`, `TestC1_MalformedExactFrameRateErrors`, updated `TestRoundTrip`/`TestExampleMediaSection`.
 
 ## timing21 (ST 2110-21)
 - [ ] **P1** TROFF in microseconds.
