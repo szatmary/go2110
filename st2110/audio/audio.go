@@ -36,12 +36,12 @@ func (e Encoding) Bytes() int {
 	return 0
 }
 
-// Common ST 2110-30 packet times (§7, Table 2).
+// Packet times defined by ST 2110-30 §7 Table 2: only 1 ms and 125 µs are
+// conformant. (250 µs and 1/3 ms are NOT in the standard's allowed set and have
+// been removed.)
 const (
-	PacketTime1ms   = time.Millisecond            // 1000 µs
-	PacketTime125us = 125 * time.Microsecond      // 125 µs
-	PacketTime250us = 250 * time.Microsecond      // 250 µs
-	PacketTime333us = 1000 * time.Microsecond / 3 // 1/3 ms (used by some 2110 audio)
+	PacketTime1ms   = time.Millisecond       // 1000 µs (Levels A, AX)
+	PacketTime125us = 125 * time.Microsecond // 125 µs (Levels B, BX, C, CX)
 )
 
 // Errors for audio packing.
@@ -51,6 +51,12 @@ var (
 	ErrBadPacketTime       = errors.New("st2110/audio: packet time does not yield an integer sample count")
 	ErrSampleCount         = errors.New("st2110/audio: sample slice not a multiple of channel count")
 	ErrShortPayload        = errors.New("st2110/audio: payload length not a multiple of the frame size")
+	// ErrSampleRate is returned when the sampling rate is not one of the rates of
+	// ST 2110-30 §7 Table 2 (48000 or 96000 Hz).
+	ErrSampleRate = errors.New("st2110/audio: sampling rate not 48000 or 96000 Hz (ST 2110-30 §7)")
+	// ErrNonConformant is returned when the (sampling rate, packet time, channel
+	// count) tuple matches no ST 2110-30 §7 Table 2 conformance level.
+	ErrNonConformant = errors.New("st2110/audio: (rate, ptime, channels) matches no ST 2110-30 conformance level")
 )
 
 // Format describes an ST 2110-30 audio stream.
@@ -69,12 +75,15 @@ type Format struct {
 	ChannelOrder string
 }
 
-// Validate checks that the format is internally consistent.
+// Validate checks that the format is internally consistent AND conformant to an
+// ST 2110-30 §7 (Table 2) conformance level: the sampling rate must be 48000 or
+// 96000 Hz, the channel count in 1..MaxChannels (64), and the (rate, packet time,
+// channels) tuple must match at least one level (A/AX/B/BX/C/CX).
 func (f Format) Validate() error {
 	if f.Encoding.Bytes() == 0 {
 		return ErrUnsupportedEncoding
 	}
-	if f.Channels <= 0 {
+	if f.Channels <= 0 || f.Channels > MaxChannels {
 		return ErrBadChannelCount
 	}
 	if f.SampleRate <= 0 || f.PacketTime <= 0 {
@@ -82,6 +91,12 @@ func (f Format) Validate() error {
 	}
 	if _, ok := f.samplesPerPacket(); !ok {
 		return ErrBadPacketTime
+	}
+	if f.SampleRate != 48000 && f.SampleRate != 96000 {
+		return ErrSampleRate
+	}
+	if !f.Conformant() {
+		return ErrNonConformant
 	}
 	return nil
 }

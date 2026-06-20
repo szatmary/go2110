@@ -25,8 +25,8 @@ Tracks each defect, the change made, and the spec-pinned regression test.
 - [x] **P4** `ReadSchedule` keeps TROFFSET (`Params.TROffset`); interlaced/PsF 1125-line TRODEFAULT (§6.3.3 Table 1) = INT((TotalLines−Height)/2)/TotalLines × TFRAME. Tests: `TestP4_ReadScheduleKeepsTROFFSET`, `TestP4_InterlacedTRODEFAULT`. (525/625 SD rows carry an extra bottom-alignment term not implemented — see DECISIONS.md.)
 
 ## audio (ST 2110-30)
-- [ ] **A1** Clause 7 conformance levels (A/B/C/AX/BX/CX); Validate rejects out-of-spec.
-- [ ] **A2** Remove bogus PacketTime250us/333us + misleading comment.
+- [x] **A1** Clause 7 Table 2 levels (A/AX/B/BX/C/CX) in `levels.go`; `Validate` enforces rate∈{48k,96k}, channels≤64, and a matching level. Tests: `TestA1_ConformanceLevels`, `TestA1_ValidateRejectsOutOfSpec`.
+- [x] **A2** Removed bogus `PacketTime250us`/`333us`; comment now cites §7 Table 2 accurately (only 1 ms / 125 µs). Test: `TestA2_BogusPacketTimesRemoved`.
 
 ## aes3 (ST 2110-31)
 - [ ] **E1** ptime emits 0.12 not 0.125.
