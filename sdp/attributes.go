@@ -9,6 +9,29 @@ import (
 // ErrBadAttribute is returned when a typed attribute value is malformed.
 var ErrBadAttribute = errors.New("sdp: malformed attribute value")
 
+// ErrBadEUI is returned when an EUI-48 (localmac) or EUI-64 (PTP grandmaster
+// clockIdentity) value is not N hyphen-separated 2-hex-digit octets (RFC 7273
+// Figure 1: EUI64 = 7(2HEXDIG "-") 2HEXDIG).
+var ErrBadEUI = errors.New("sdp: malformed EUI-48/64 value")
+
+// validEUI reports whether s is exactly octets hyphen-separated 2-hex-digit
+// groups (octets=6 for EUI-48, 8 for EUI-64).
+func validEUI(s string, octets int) bool {
+	parts := strings.Split(s, "-")
+	if len(parts) != octets {
+		return false
+	}
+	for _, p := range parts {
+		if len(p) != 2 {
+			return false
+		}
+		if _, err := strconv.ParseUint(p, 16, 8); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
 // RTPMap models an a=rtpmap attribute (RFC 4566 §6):
 // "<payload type> <encoding name>/<clock rate>[/<encoding parameters>]".
 type RTPMap struct {
@@ -67,8 +90,14 @@ type RefClock struct {
 	// GMID is the grandmaster clockIdentity in EUI-64 form (hyphen-separated),
 	// valid when PTP && !Traceable.
 	GMID string
-	// Domain is the PTP domain number, valid when PTP && !Traceable.
+	// Domain is the PTP domain number, valid when PTP && !Traceable && !NoDomain.
 	Domain int
+	// DomainNmbr selects the RFC 7273 "domain-nmbr=<n>" rendering of the PTP
+	// domain (used by ST 2110-10:2022). When false the bare ":<n>" form of
+	// ST 2110-10:2017 is rendered. Parsing sets it from the form encountered.
+	DomainNmbr bool
+	// NoDomain indicates the PTP domain is omitted (RFC 7273 makes it optional).
+	NoDomain bool
 
 	// LocalMAC signals the "ts-refclk:localmac=<EUI-48>" form (ST 2110-10 §8.2).
 	LocalMAC string
@@ -86,20 +115,31 @@ func (r RefClock) String() string {
 	if r.Traceable {
 		return "ptp=" + profile + ":traceable"
 	}
-	return "ptp=" + profile + ":" + r.GMID + ":" + strconv.Itoa(r.Domain)
+	s := "ptp=" + profile + ":" + r.GMID
+	if r.NoDomain {
+		return s
+	}
+	if r.DomainNmbr {
+		return s + ":domain-nmbr=" + strconv.Itoa(r.Domain)
+	}
+	return s + ":" + strconv.Itoa(r.Domain)
 }
 
 // ParseRefClock parses a ts-refclk attribute value.
 func ParseRefClock(v string) (RefClock, error) {
 	v = strings.TrimSpace(v)
 	if mac, ok := strings.CutPrefix(v, "localmac="); ok {
+		if !validEUI(mac, 6) { // EUI-48
+			return RefClock{}, ErrBadEUI
+		}
 		return RefClock{LocalMAC: mac}, nil
 	}
 	body, ok := strings.CutPrefix(v, "ptp=")
 	if !ok {
 		return RefClock{}, ErrBadAttribute
 	}
-	// profile ":" (traceable | clockid ":" domain)
+	// ptp = ptp-version ":" ptp-server, where ptp-server is "traceable" or an
+	// EUI-64 clockIdentity optionally followed by ":" and a PTP domain.
 	profile, rest, ok := strings.Cut(body, ":")
 	if !ok {
 		return RefClock{}, ErrBadAttribute
@@ -109,14 +149,28 @@ func ParseRefClock(v string) (RefClock, error) {
 		rc.Traceable = true
 		return rc, nil
 	}
-	// clockid (which itself contains ':' separators in EUI-64) and a trailing
-	// ":domain": split on the last colon.
-	idx := strings.LastIndex(rest, ":")
-	if idx < 0 {
-		return RefClock{}, ErrBadAttribute
+	// The EUI-64 grandmaster id uses '-' separators (no ':'), so the first ':'
+	// after it begins the optional domain.
+	gmid, domainPart, hasDomain := strings.Cut(rest, ":")
+	if !validEUI(gmid, 8) { // EUI-64
+		return RefClock{}, ErrBadEUI
 	}
-	rc.GMID = rest[:idx]
-	dom, err := strconv.Atoi(rest[idx+1:])
+	rc.GMID = gmid
+	if !hasDomain {
+		rc.NoDomain = true // RFC 7273: the PTP domain is optional
+		return rc, nil
+	}
+	if n, ok := strings.CutPrefix(domainPart, "domain-nmbr="); ok {
+		dom, err := strconv.Atoi(n)
+		if err != nil {
+			return RefClock{}, ErrBadAttribute
+		}
+		rc.Domain = dom
+		rc.DomainNmbr = true
+		return rc, nil
+	}
+	// Bare integer domain (ST 2110-10:2017 form).
+	dom, err := strconv.Atoi(domainPart)
 	if err != nil {
 		return RefClock{}, ErrBadAttribute
 	}
@@ -133,30 +187,80 @@ type MediaClock struct {
 	Offset uint64
 	// Sender selects the asynchronous "mediaclk:sender" form.
 	Sender bool
+	// ID is the optional "id=<media-clktag>" master-clock identifier prefix
+	// (RFC 7273 §5.3), e.g. "src:word1" or "stream7". Empty when absent.
+	ID string
+	// RateNum/RateDen carry the optional "rate=<num>/<den>" modifier of the
+	// direct form (RFC 7273 §5.2). RateNum == 0 means the modifier is absent.
+	RateNum int64
+	RateDen int64
 }
 
 // String renders the mediaclk value (without the leading "mediaclk:").
 func (m MediaClock) String() string {
-	if m.Sender {
-		return "sender"
+	var prefix string
+	if m.ID != "" {
+		prefix = "id=" + m.ID + " "
 	}
-	return "direct=" + strconv.FormatUint(m.Offset, 10)
+	if m.Sender {
+		return prefix + "sender"
+	}
+	s := prefix + "direct=" + strconv.FormatUint(m.Offset, 10)
+	if m.RateNum != 0 {
+		s += " rate=" + strconv.FormatInt(m.RateNum, 10) + "/" + strconv.FormatInt(m.RateDen, 10)
+	}
+	return s
 }
 
-// ParseMediaClock parses a mediaclk attribute value.
+// ParseMediaClock parses a mediaclk attribute value, including the optional
+// "id=<tag>" master-clock prefix (RFC 7273 §5.3) and the "rate=<num>/<den>"
+// modifier of the direct form (§5.2).
 func ParseMediaClock(v string) (MediaClock, error) {
 	v = strings.TrimSpace(v)
-	if v == "sender" {
-		return MediaClock{Sender: true}, nil
-	}
-	if off, ok := strings.CutPrefix(v, "direct="); ok {
-		n, err := strconv.ParseUint(off, 10, 64)
-		if err != nil {
+	var mc MediaClock
+	if after, ok := strings.CutPrefix(v, "id="); ok {
+		id, rest, ok := strings.Cut(after, " ")
+		if !ok {
 			return MediaClock{}, ErrBadAttribute
 		}
-		return MediaClock{Direct: true, Offset: n}, nil
+		mc.ID = id
+		v = strings.TrimSpace(rest)
 	}
-	return MediaClock{}, ErrBadAttribute
+	if v == "sender" {
+		mc.Sender = true
+		return mc, nil
+	}
+	fields := strings.Fields(v)
+	if len(fields) == 0 {
+		return MediaClock{}, ErrBadAttribute
+	}
+	off, ok := strings.CutPrefix(fields[0], "direct=")
+	if !ok {
+		return MediaClock{}, ErrBadAttribute
+	}
+	n, err := strconv.ParseUint(off, 10, 64)
+	if err != nil {
+		return MediaClock{}, ErrBadAttribute
+	}
+	mc.Direct = true
+	mc.Offset = n
+	for _, f := range fields[1:] {
+		rate, ok := strings.CutPrefix(f, "rate=")
+		if !ok {
+			return MediaClock{}, ErrBadAttribute
+		}
+		numStr, denStr, ok := strings.Cut(rate, "/")
+		if !ok {
+			return MediaClock{}, ErrBadAttribute
+		}
+		num, err1 := strconv.ParseInt(numStr, 10, 64)
+		den, err2 := strconv.ParseInt(denStr, 10, 64)
+		if err1 != nil || err2 != nil || num <= 0 || den <= 0 {
+			return MediaClock{}, ErrBadAttribute
+		}
+		mc.RateNum, mc.RateDen = num, den
+	}
+	return mc, nil
 }
 
 // SourceFilter models an a=source-filter attribute (RFC 4570):

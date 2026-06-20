@@ -41,4 +41,4 @@ Tracks each defect, the change made, and the spec-pinned regression test.
 - [x] **M2** `PackedFrame.PacketizeFrame`/`PacketizeFrameFields` derive RTP timestamps through `media.Clock` (§7.6.1); a frame's packets all share the clock-derived timestamp. Tests: `TestM2_PacketizeFrameSharedClockTimestamp`, `TestM2_PacketizeFrameFieldsTimestamps`.
 
 ## sdp / rtp (stretch — S1)
-- [ ] **S1** RFC 7273 generality + 2-byte RTP extension vector.
+- [x] **S1** RFC 7273 generality in `sdp/attributes.go`: `domain-nmbr=` PTP domain form, no-domain form, `mediaclk … rate=N/D`, `mediaclk:id=` clock-id prefix, and EUI-48/64 validation (`ErrBadEUI`). Added a two-byte (profile 0x1000) RTP header-extension on-wire vector to `rtp`. Tests: `TestS1_RefClockDomainNmbr`, `TestS1_RefClockRejectsBadEUI`, `TestS1_MediaClockRateAndID`, `TestS1_TwoByteHeaderExtensionVector`.
