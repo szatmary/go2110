@@ -157,8 +157,73 @@ func TestFrameTimestampWiring(t *testing.T) {
 	}
 }
 
-func TestInterlacedNotYetSupported(t *testing.T) {
-	// Documents the current gap: interlaced/PsF packing is not implemented.
-	// When support is added, replace this with a real round-trip test.
-	t.Skip("interlaced/PsF packing not yet implemented (ROADMAP item 4)")
+func TestInterlacedRoundTrip(t *testing.T) {
+	cases := []struct {
+		name string
+		f    Format
+	}{
+		{"422-10 interlaced even", Format{Sampling: SamplingYCbCr422, Depth: Depth10, Width: 16, Height: 8, Interlaced: true}},
+		{"422-10 interlaced odd", Format{Sampling: SamplingYCbCr422, Depth: Depth10, Width: 16, Height: 5, Interlaced: true}},
+		{"444-10 PsF", Format{Sampling: SamplingYCbCr444, Depth: Depth10, Width: 8, Height: 6, Interlaced: true, Segmented: true}},
+		{"rgb-8 interlaced", Format{Sampling: SamplingRGB, Depth: Depth8, Width: 8, Height: 4, Interlaced: true}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			orig := NewFrame(tc.f)
+			fillFrame(orig)
+			pf, err := orig.Pack()
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Field row numbers restart at 0 per field; the F bit distinguishes them.
+			var sawField0, sawField1 bool
+			for _, ln := range pf.Lines {
+				if ln.Field {
+					sawField1 = true
+				} else {
+					sawField0 = true
+				}
+			}
+			if !sawField0 || !sawField1 {
+				t.Fatalf("expected both fields, field0=%v field1=%v", sawField0, sawField1)
+			}
+
+			c := media.VideoClock()
+			fps := media.Rational{Num: 30000, Den: 1001}
+			ts0 := c.FieldTimestamp(0, 0, fps)
+			ts1 := c.FieldTimestamp(0, 1, fps)
+			if tc.f.Segmented {
+				ts1 = ts0 // PsF: both segments share the timestamp (§7.6.1)
+			}
+			pkts, err := pf.PacketizeFields(PacketizeOptions{PayloadType: 96, SSRC: 1, StartSequence: 0}, ts0, ts1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Exactly two marker bits (one per field), and the field timestamps used.
+			markers := 0
+			for _, p := range pkts {
+				if p.Header.Marker {
+					markers++
+				}
+				if p.Header.Timestamp != ts0 && p.Header.Timestamp != ts1 {
+					t.Errorf("unexpected timestamp %d", p.Header.Timestamp)
+				}
+			}
+			if markers != 2 {
+				t.Errorf("got %d marker bits, want 2 (one per field)", markers)
+			}
+
+			got, err := Depacketize(pkts, tc.f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := got.Unpack()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(out.Planes, orig.Planes) {
+				t.Error("interlaced planes differ after round-trip")
+			}
+		})
+	}
 }

@@ -64,8 +64,8 @@ CI (GitHub Actions) runs the same on every push. `main` is always green.
 
 ## Status & scope
 
-The full roadmap (ST 2110-10/-20/-21/-22/-30/-31/-40/-41/-43) is implemented.
-Known limitations: video packetization currently covers **progressive** scan
-(interlaced/PsF is a documented gap); the `cv22`, `fastmeta`, and `ttml`
-packages implement the 2110 transport/SDP framework, while inner codec payloads
-(e.g. JPEG XS, VC-2) are out of scope of those framework standards.
+The full roadmap (ST 2110-10/-20/-21/-22/-30/-31/-40/-41/-43) is implemented,
+including progressive and interlaced/PsF uncompressed video. The `cv22`,
+`fastmeta`, and `ttml` packages implement the 2110 transport/SDP framework, while
+inner codec payloads (e.g. JPEG XS, VC-2) are out of scope of those framework
+standards.

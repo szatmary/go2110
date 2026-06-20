@@ -45,32 +45,91 @@ func (f Format) maxRTPPacket(opts PacketizeOptions) int {
 	}
 }
 
+// shaper holds the per-frame packing constraints shared across fields.
+type shaper struct {
+	payloadBudget int
+	og            int
+	bpm           bool
+	bpmTarget     int
+}
+
+// newShaper validates the packing constraints for the frame.
+func (pf *PackedFrame) newShaper(opts PacketizeOptions) (shaper, error) {
+	s := shaper{
+		payloadBudget: pf.Format.maxRTPPacket(opts) - rtpFixedHeaderLen,
+		og:            pf.PgroupOctets,
+		bpm:           pf.Format.PackingMode == PackingBPM,
+		bpmTarget:     BPMBlock * BPMBlocksPerPacket, // 1260
+	}
+	if s.payloadBudget < extSeqLen+srdHeaderLen+s.og {
+		return shaper{}, ErrBudgetTooSmall
+	}
+	if s.bpm {
+		if s.bpmTarget%s.og != 0 {
+			return shaper{}, ErrBPMAlignment
+		}
+		// BPM forbids the Extended UDP size limit (§6.3.3).
+		if s.payloadBudget+rtpFixedHeaderLen > StandardUDPLimit {
+			s.payloadBudget = StandardUDPLimit - rtpFixedHeaderLen
+		}
+	}
+	return s, nil
+}
+
 // Packetize splits a packed frame into RTP packets per ST 2110-20 §6.1 and the
 // packing mode in Format.PackingMode (GPM by default; BPM uses 7×180-octet
 // payloads). The marker bit is set on the final packet of the frame (§6.1.2).
+//
+// For interlaced/PsF streams (Format.Interlaced), use PacketizeFields instead so
+// that each field receives its own RTP timestamp; Packetize emits all lines under
+// a single timestamp, which is correct only for progressive frames.
 func (pf *PackedFrame) Packetize(opts PacketizeOptions) ([]rtp.Packet, error) {
-	payloadBudget := pf.Format.maxRTPPacket(opts) - rtpFixedHeaderLen
-	og := pf.PgroupOctets
-	if payloadBudget < extSeqLen+srdHeaderLen+og {
-		return nil, ErrBudgetTooSmall
+	s, err := pf.newShaper(opts)
+	if err != nil {
+		return nil, err
 	}
+	packets, _, err := pf.packetizeLines(pf.Lines, opts, s, opts.Timestamp, opts.StartSequence)
+	return packets, err
+}
 
-	bpm := pf.Format.PackingMode == PackingBPM
-	bpmTarget := BPMBlock * BPMBlocksPerPacket // 1260
-	if bpm {
-		if bpmTarget%og != 0 {
-			return nil, ErrBPMAlignment
-		}
-		// BPM forbids the Extended UDP size limit (§6.3.3).
-		if payloadBudget+rtpFixedHeaderLen > StandardUDPLimit {
-			payloadBudget = StandardUDPLimit - rtpFixedHeaderLen
+// PacketizeFields packetizes an interlaced or PsF frame as two fields/segments,
+// each carrying its own RTP timestamp (ST 2110-10 §7.6.1): the temporally first
+// field uses firstTimestamp and the second uses secondTimestamp (equal for PsF).
+// The marker bit is set on the last packet of each field, and sequence numbers
+// run continuously across both fields.
+func (pf *PackedFrame) PacketizeFields(opts PacketizeOptions, firstTimestamp, secondTimestamp uint32) ([]rtp.Packet, error) {
+	s, err := pf.newShaper(opts)
+	if err != nil {
+		return nil, err
+	}
+	var first, second []Line
+	for _, ln := range pf.Lines {
+		if ln.Field {
+			second = append(second, ln)
+		} else {
+			first = append(first, ln)
 		}
 	}
+	p0, ext, err := pf.packetizeLines(first, opts, s, firstTimestamp, opts.StartSequence)
+	if err != nil {
+		return nil, err
+	}
+	p1, _, err := pf.packetizeLines(second, opts, s, secondTimestamp, ext)
+	if err != nil {
+		return nil, err
+	}
+	return append(p0, p1...), nil
+}
 
+// packetizeLines packetizes a single field (or whole progressive frame) worth of
+// lines under one timestamp, setting the marker bit on the last packet. It
+// returns the packets and the next extended sequence number.
+func (pf *PackedFrame) packetizeLines(lines []Line, opts PacketizeOptions, s shaper, timestamp uint32, startExt uint32) ([]rtp.Packet, uint32, error) {
+	og := s.og
 	var packets []rtp.Packet
-	ext := opts.StartSequence
+	ext := startExt
 	lineIdx, byteOff := 0, 0
-	totalLines := len(pf.Lines)
+	totalLines := len(lines)
 
 	for lineIdx < totalLines {
 		var ph PayloadHeader
@@ -78,18 +137,18 @@ func (pf *PackedFrame) Packetize(opts PacketizeOptions) ([]rtp.Packet, error) {
 		ph.ExtendedSequenceNumber = high
 
 		var payloadData []byte
-		rem := payloadBudget - extSeqLen
+		rem := s.payloadBudget - extSeqLen
 		dataSoFar := 0
 		for len(ph.SRDs) < MaxSRD {
 			if lineIdx >= totalLines {
 				break
 			}
-			ln := pf.Lines[lineIdx]
+			ln := lines[lineIdx]
 			avail := len(ln.Data) - byteOff
 
 			maxData := rem - srdHeaderLen
-			if bpm {
-				if r := bpmTarget - dataSoFar; r < maxData {
+			if s.bpm {
+				if r := s.bpmTarget - dataSoFar; r < maxData {
 					maxData = r
 				}
 			}
@@ -122,17 +181,17 @@ func (pf *PackedFrame) Packetize(opts PacketizeOptions) ([]rtp.Packet, error) {
 				// reason to keep going would be more budget, which there isn't.
 				break
 			}
-			if bpm && dataSoFar >= bpmTarget {
+			if s.bpm && dataSoFar >= s.bpmTarget {
 				break
 			}
 		}
-		if bpm && dataSoFar < bpmTarget && lineIdx < totalLines && len(ph.SRDs) == MaxSRD {
-			return nil, ErrBPMTooManyRows
+		if s.bpm && dataSoFar < s.bpmTarget && lineIdx < totalLines && len(ph.SRDs) == MaxSRD {
+			return nil, ext, ErrBPMTooManyRows
 		}
 
 		hdrBytes, err := ph.Marshal()
 		if err != nil {
-			return nil, err
+			return nil, ext, err
 		}
 		payload := make([]byte, 0, len(hdrBytes)+len(payloadData))
 		payload = append(payload, hdrBytes...)
@@ -143,16 +202,16 @@ func (pf *PackedFrame) Packetize(opts PacketizeOptions) ([]rtp.Packet, error) {
 				Version:        rtp.Version,
 				PayloadType:    opts.PayloadType,
 				SequenceNumber: low,
-				Timestamp:      opts.Timestamp,
+				Timestamp:      timestamp,
 				SSRC:           opts.SSRC,
-				Marker:         lineIdx >= totalLines, // last packet of frame
+				Marker:         lineIdx >= totalLines, // last packet of field/frame
 			},
 			Payload: payload,
 		}
 		packets = append(packets, pkt)
 		ext++
 	}
-	return packets, nil
+	return packets, ext, nil
 }
 
 // lineKey identifies a sample row (or 4:2:0 row-pair) within a frame.

@@ -6,7 +6,7 @@ import "errors"
 var (
 	ErrBadDimensions = errors.New("st2110/video: frame dimensions incompatible with sampling")
 	ErrPlaneSize     = errors.New("st2110/video: component plane has wrong length")
-	ErrInterlaced    = errors.New("st2110/video: interlaced/PsF packing not yet implemented")
+	ErrInterlaced    = errors.New("st2110/video: 4:2:0 sampling is progressive-only and cannot be interlaced/PsF")
 )
 
 // Frame holds the active video samples of one progressive frame (or a single
@@ -86,14 +86,28 @@ type PackedFrame struct {
 	Lines           []Line
 }
 
-// Pack converts the frame's component planes into packed sample-row data. Only
-// progressive frames are supported; interlaced/PsF frames return ErrInterlaced.
+// fieldHeights returns the number of sample rows in the first and second field
+// (or PsF segment). When the frame height is odd, the temporally first field
+// carries one extra line (ST 2110-20 §6.1.5).
+func (f Format) fieldHeights() (first, second int) {
+	first = (f.Height + 1) / 2
+	second = f.Height / 2
+	return
+}
+
+// Pack converts the frame's component planes into packed sample-row data.
+//
+// For progressive frames each sample row becomes one Line. For interlaced or PsF
+// frames the full-frame planes are split into two fields/segments: the temporally
+// first field carries frame rows 0,2,4,… and the second carries rows 1,3,5,…
+// (the second field's rows are displaced below the like-numbered first-field rows
+// per §6.1.5). Field lines are emitted first-field-first, with SRD row numbers
+// restarting at 0 per field and the F bit set on the second field. 4:2:0 is
+// progressive-only (§6.2.5) and returns ErrInterlaced when combined with
+// interlace.
 func (fr *Frame) Pack() (*PackedFrame, error) {
 	if err := fr.validate(); err != nil {
 		return nil, err
-	}
-	if fr.Format.Interlaced {
-		return nil, ErrInterlaced
 	}
 	pg, err := fr.Format.Pgroup()
 	if err != nil {
@@ -107,6 +121,26 @@ func (fr *Frame) Pack() (*PackedFrame, error) {
 		PgroupOctets:    pg.Octets,
 		HPixelsPerGroup: fr.Format.hPixelsPerPgroup(pg),
 	}
+
+	if fr.Format.Interlaced {
+		if fam == fam420 {
+			return nil, ErrInterlaced // 4:2:0 is progressive-only (§6.2.5)
+		}
+		h0, h1 := fr.Format.fieldHeights()
+		for f := 0; f < 2; f++ {
+			hf := h0
+			if f == 1 {
+				hf = h1
+			}
+			for rf := 0; rf < hf; rf++ {
+				frameRow := 2*rf + f
+				samples := fr.samplesRow(fam, frameRow, pg)
+				pf.Lines = append(pf.Lines, Line{RowNumber: uint16(rf), Field: f == 1, Data: packSamples(samples, bits)})
+			}
+		}
+		return pf, nil
+	}
+
 	switch fam {
 	case fam420:
 		for pair := 0; pair < fr.Format.Height/2; pair++ {
@@ -196,15 +230,31 @@ func (fr *Frame) samples420(pair int, pg Pgroup) []uint16 {
 	return out
 }
 
-// Unpack reconstructs a Frame's component planes from packed sample-row data.
+// frameRow maps a Line's SRD row number to a full-frame row index, accounting
+// for the field interleave of interlaced/PsF streams (§6.1.5).
+func (pf *PackedFrame) frameRow(ln Line) int {
+	if pf.Format.Interlaced {
+		field := 0
+		if ln.Field {
+			field = 1
+		}
+		return 2*int(ln.RowNumber) + field
+	}
+	return int(ln.RowNumber)
+}
+
+// Unpack reconstructs a Frame's component planes from packed sample-row data,
+// handling both progressive and interlaced/PsF streams.
 func (pf *PackedFrame) Unpack() (*Frame, error) {
 	f := pf.Format
-	if f.Interlaced {
-		return nil, ErrInterlaced
-	}
 	pg, err := f.Pgroup()
 	if err != nil {
 		return nil, err
+	}
+	if f.Interlaced {
+		if fam, _ := samplingFamily(f.Sampling); fam == fam420 {
+			return nil, ErrInterlaced // 4:2:0 is progressive-only (§6.2.5)
+		}
 	}
 	bits := f.Depth.Bits()
 	fam, _ := samplingFamily(f.Sampling)
@@ -236,7 +286,7 @@ func (pf *PackedFrame) Unpack() (*Frame, error) {
 				}
 			}
 		case fam422:
-			row := int(ln.RowNumber)
+			row := pf.frameRow(ln)
 			cw := w / 2
 			samples := unpackSamples(ln.Data, cw*4, bits)
 			cb, y, cr := fr.Planes[0], fr.Planes[1], fr.Planes[2]
@@ -247,7 +297,7 @@ func (pf *PackedFrame) Unpack() (*Frame, error) {
 				y[row*w+2*g+1] = samples[4*g+3]
 			}
 		case fam444:
-			row := int(ln.RowNumber)
+			row := pf.frameRow(ln)
 			nGroups := (w + pg.Pixels - 1) / pg.Pixels
 			samples := unpackSamples(ln.Data, nGroups*pg.Samples, bits)
 			p0, p1, p2 := fr.Planes[0], fr.Planes[1], fr.Planes[2]
@@ -263,7 +313,7 @@ func (pf *PackedFrame) Unpack() (*Frame, error) {
 				}
 			}
 		case famKey:
-			row := int(ln.RowNumber)
+			row := pf.frameRow(ln)
 			nGroups := (w + pg.Pixels - 1) / pg.Pixels
 			samples := unpackSamples(ln.Data, nGroups*pg.Samples, bits)
 			k := fr.Planes[0]

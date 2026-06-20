@@ -14,12 +14,11 @@ A running log so a fresh VM can continue. Newest entry on top.
 
 ## Known gaps / next refinements
 
-- `st2110/video`: interlaced/PsF packing is not implemented (progressive only).
-  Add Frame.Pack/Unpack interlaced paths + per-field timestamps; replace the
-  skipped test in video/roundtrip_test.go.
+- Interlaced/PsF video is now supported (Frame.Pack/Unpack + PacketizeFields with
+  per-field timestamps; PsF shares one timestamp). Round-trip tested.
 - `cv22`/`ttml`/`fastmeta` carry framework + SDP; the inner codec payloads (JPEG
   XS RFC 9134, VC-2) are intentionally out of scope of the 2110 framework specs.
-- Possible additions: RTCP sender reports, ST 2022-7 redundancy helpers,
+- Possible future additions: RTCP sender reports, ST 2022-7 redundancy helpers,
   higher-level stream send/receive over UDP sockets.
 
 ## Run log

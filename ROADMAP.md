@@ -41,8 +41,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
 
 ## Remaining refinements (post-roadmap)
 
-- [ ] Interlaced / PsF support in `st2110/video` (Frame.Pack/Unpack + per-field
-      RTP timestamps), replacing the skipped test in roundtrip_test.go.
+- [x] Interlaced / PsF support in `st2110/video` (Frame.Pack/Unpack +
+      PacketizeFields per-field RTP timestamps), with a round-trip test.
 
 See `DECISIONS.md` for non-obvious engineering decisions and `PROGRESS.md` for the
 running log and the next concrete step.
