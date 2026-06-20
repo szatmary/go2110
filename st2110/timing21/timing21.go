@@ -79,6 +79,12 @@ type Params struct {
 	// to derive TLINE = TFRAME/TotalLines for the gapped interlaced schedule
 	// (§6.3.3). Only required for interlaced gapped schedules.
 	TotalLines int
+	// TROffset is the prevailing TROFFSET in seconds (ST 2110-21 §6.3): the
+	// offset of the Video Transmission Datum from the frame alignment point. The
+	// Packet Read Times produced by ReadSchedule are offset by it. Zero selects
+	// no extra offset (the schedule then starts at the alignment point); use
+	// TROffsetDefaultSeconds for the standard default.
+	TROffset float64
 }
 
 func (p Params) maxUDP() int64 {
@@ -182,12 +188,30 @@ func (p Params) TRS(model PRSModel) float64 {
 	return base
 }
 
-// TROffsetDefaultSeconds returns TRODEFAULT in seconds for the gapped progressive
-// model (ST 2110-21 §6.3.2): (43/1125)*TFRAME for height ≥ 1080, else
-// (28/750)*TFRAME. Interlaced TRODEFAULT depends on the line standard and is not
-// computed here.
+// TROffsetDefaultSeconds returns TRODEFAULT in seconds for the gapped model
+// (ST 2110-21 §6.3).
+//
+// Progressive (§6.3.2): (43/1125)*TFRAME for Height ≥ 1080, else (28/750)*TFRAME.
+//
+// Interlaced / PsF (§6.3.3, Table 1): for the 1125-line BT.709-6 raster (the
+// interlaced/PsF raster carried by ST 2110), TRODEFAULT = INT((TotalLines −
+// Height)/2)/TotalLines × TFRAME (e.g. 1080i → INT(45/2)/1125 = 22/1125 ×
+// TFRAME). TotalLines defaults to 1125 when unset. The 525/625-line interlaced
+// rows of Table 1 carry an additional bottom-of-active alignment term (see Note 2
+// of §6.3.3) and are out of scope here; see DECISIONS.md.
 func (p Params) TROffsetDefaultSeconds() float64 {
 	tf := p.TFrameSeconds()
+	if p.Interlaced {
+		total := p.TotalLines
+		if total <= 0 {
+			total = 1125 // default BT.709-6 interlaced/PsF raster
+		}
+		n := int64(total-p.Height) / 2 // INT() == floor for non-negative blanking
+		if n < 0 {
+			n = 0
+		}
+		return float64(n) / float64(total) * tf
+	}
 	if p.Height >= 1080 {
 		return 43.0 / 1125.0 * tf
 	}
