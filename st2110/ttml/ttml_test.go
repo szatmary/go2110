@@ -101,7 +101,7 @@ func TestKeepAlive(t *testing.T) {
 }
 
 func TestSDP(t *testing.T) {
-	m := MediaDescription(30000, 112)
+	m := MediaDescription(30000, 112, "")
 	if m.Media != "application" {
 		t.Errorf("media = %q", m.Media)
 	}
