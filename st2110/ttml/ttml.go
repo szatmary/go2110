@@ -23,6 +23,16 @@ const payloadHeaderLen = 4
 var (
 	ErrShortPayload = errors.New("st2110/ttml: payload shorter than the RFC 8759 header")
 	ErrBadLength    = errors.New("st2110/ttml: Length field exceeds payload")
+	// ErrTimestampMismatch is returned when packets that are supposed to belong
+	// to one document do not share the RTP timestamp (RFC 8759 §4.2: "Documents
+	// spread across multiple packets MUST use the same timestamp").
+	ErrTimestampMismatch = errors.New("st2110/ttml: packets of one document must share the RTP timestamp")
+	// ErrSequenceGap is returned when a document's packets are not consecutive in
+	// sequence number (RFC 8759 §4.2/§8: "different consecutive Sequence Numbers").
+	ErrSequenceGap = errors.New("st2110/ttml: document packets must have consecutive sequence numbers")
+	// ErrEmptyDocument is returned for a zero-length (empty) document, which is
+	// invalid and MUST be discarded (RFC 8759 §6).
+	ErrEmptyDocument = errors.New("st2110/ttml: empty (zero-length) document must be discarded")
 )
 
 // MarshalPacket builds an RFC 8759 RTP payload carrying the given User Data Words
@@ -131,13 +141,27 @@ func KeepAlive(opts PacketizeOptions) rtp.Packet {
 	}
 }
 
-// Depacketize reassembles one TTML document from consecutive RTP packets by
-// concatenating their User Data Words in arrival order (assumed ascending
-// sequence number), up to and including the packet whose marker bit is set
-// (RFC 8759 §8). Packets are assumed to belong to a single document.
+// Depacketize reassembles one TTML document from the RTP packets of a single
+// document, concatenating their User Data Words up to and including the packet
+// whose marker bit is set (RFC 8759 §8). It enforces the document framing rules:
+// every contributing packet must share one RTP timestamp (§4.2) and carry
+// consecutive ascending sequence numbers (§4.2/§8); a reassembled document of
+// zero length is invalid and is rejected (§6, "empty documents ... MUST be
+// discarded"). Packets after the marker (a new document) are not consumed.
 func Depacketize(packets []rtp.Packet) ([]byte, error) {
+	if len(packets) == 0 {
+		return nil, ErrEmptyDocument
+	}
+	ts := packets[0].Header.Timestamp
+	firstSeq := packets[0].Header.SequenceNumber
 	var doc []byte
 	for i := range packets {
+		if packets[i].Header.Timestamp != ts {
+			return nil, ErrTimestampMismatch
+		}
+		if packets[i].Header.SequenceNumber != firstSeq+uint16(i) {
+			return nil, ErrSequenceGap
+		}
 		udw, err := ParsePacket(packets[i].Payload)
 		if err != nil {
 			return nil, err
@@ -146,6 +170,9 @@ func Depacketize(packets []rtp.Packet) ([]byte, error) {
 		if packets[i].Header.Marker {
 			break
 		}
+	}
+	if len(doc) == 0 {
+		return nil, ErrEmptyDocument
 	}
 	return doc, nil
 }
