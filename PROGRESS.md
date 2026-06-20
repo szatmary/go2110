@@ -4,12 +4,19 @@ A running log so a fresh VM can continue. Newest entry on top.
 
 ## Current state
 
-- Bootstrapping the project: scaffold + planning docs being committed first.
+- Foundation complete (roadmap items 1–4): `rtp`, `sdp`, `st2110/media`,
+  `st2110/video` all build, vet clean, and pass tests on `main`.
+- Video supports **progressive** packetize/depacketize for 4:2:2 (8/10/12/16),
+  4:4:4, RGB, 4:2:0 (8/10/12), Key, in GPM and BPM, with bit-exact round-trip
+  tests. Interlaced/PsF is the known gap (skipped test in roundtrip_test.go).
 
 ## Next concrete step
 
-- Implement the `rtp` package (RFC 3550 header marshal/unmarshal) with
-  table-driven tests, then commit + push.
+- Roadmap item 5: ST 2110-30 PCM audio (read spec/st2110-30.txt first):
+  L16/L24 packetization, ptime/packet-time, channel-count/order, SDP. Then -40
+  (ANC, spec/st2110-40.txt), then -21 (timing models, spec/st2110-21.txt).
+- Later: add interlaced/PsF support to `st2110/video` (Frame.Pack/Unpack +
+  per-field timestamps), replacing the skipped test.
 
 ## Run log
 
