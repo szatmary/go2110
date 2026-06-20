@@ -102,6 +102,11 @@ func PgroupFor(s Sampling, d Depth) (Pgroup, error) {
 	if bits == 0 {
 		return Pgroup{}, ErrUnsupportedFormat
 	}
+	// XYZ is defined only at 12-bit and 16-bit/16f depth (ST 2110-20 §6.2.3,
+	// Table 1); it has no 8-bit or 10-bit form.
+	if s == SamplingXYZ && d != Depth12 && d != Depth16 && d != Depth16f {
+		return Pgroup{}, ErrUnsupportedFormat
+	}
 	var octets, pixels int
 	switch fam {
 	case fam444: // Table 1
