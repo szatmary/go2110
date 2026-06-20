@@ -19,10 +19,10 @@ Tracks each defect, the change made, and the spec-pinned regression test.
 - [x] **C1** exactframerate fmtp param round-trips; parse error surfaced (no longer swallowed); `TestRoundTrip` now compares `FrameRate`. Tests: `TestC1_FractionalFrameRateRoundTrip`, `TestC1_MalformedExactFrameRateErrors`, updated `TestRoundTrip`/`TestExampleMediaSection`.
 
 ## timing21 (ST 2110-21)
-- [ ] **P1** TROFF in microseconds.
-- [ ] **P2** Drain grid epoch-anchored.
-- [ ] **P3** Wire up validators + integration test (NetworkCompatible/VRXCompliant).
-- [ ] **P4** ReadSchedule keeps TROFFSET; interlaced TRODEFAULT table.
+- [x] **P1** TROFF emitted in microseconds (§8.2, confirmed from the SMPTE PDF). `SetTROFF(float64 seconds)` + `ParseTROFF`. Test: `TestP1_TROFFMicroseconds`.
+- [x] **P2** `MaxCInst` drains on an Epoch-anchored grid (N×TDRAIN), epoch-absolute timebase, O(packets) via floor() (no longer iterates from 0). Test: `TestP2_DrainGridEpochAnchored`.
+- [x] **P3** Public `Validate`/`ComplianceReport` entry point wiring VRXFull/CMax/ReadSchedule/MaxCInst/VRX; integration test packetizes a real frame and checks `NetworkCompatible`/`VRXCompliant` for a Narrow sender. Test: `TestP3_PacketizerStreamIsCompliant`.
+- [x] **P4** `ReadSchedule` keeps TROFFSET (`Params.TROffset`); interlaced/PsF 1125-line TRODEFAULT (§6.3.3 Table 1) = INT((TotalLines−Height)/2)/TotalLines × TFRAME. Tests: `TestP4_ReadScheduleKeepsTROFFSET`, `TestP4_InterlacedTRODEFAULT`. (525/625 SD rows carry an extra bottom-alignment term not implemented — see DECISIONS.md.)
 
 ## audio (ST 2110-30)
 - [ ] **A1** Clause 7 conformance levels (A/B/C/AX/BX/CX); Validate rejects out-of-spec.

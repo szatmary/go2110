@@ -2,6 +2,27 @@
 
 Non-obvious decisions made while implementing go2110. Newest on top.
 
+## Conformance hardening (independent audit)
+
+- **ST 2110-21 §6.3.3 SD interlaced TRODEFAULT (P4).** The 525/625-line interlaced
+  rows of Table 1 add an extra bottom-of-active alignment term to the base
+  `INT((total−HEIGHT)/2)/total × TFRAME` offset (Note 2: SD visual lines are
+  aligned to the bottom of the active area, with variable top blanking). That
+  addend could not be reliably extracted from the SMPTE PDF's math layout (it
+  renders as a dangling "+" with no recoverable operand, even via per-glyph bbox
+  extraction). Only the 1125-line BT.709-6 interlaced/PsF case — the interlaced
+  raster actually carried over ST 2110 — is implemented and tested; SD rasters are
+  out of scope rather than guessed. `TROffsetDefaultSeconds` returns the verified
+  1125 value for interlaced streams.
+- **ST 2110-21 TROFF unit (P1).** Confirmed from the §8.2 text in the public SMPTE
+  PDF: TROFF is "a positive integer number of microseconds", not RTP-clock ticks.
+- **colorimetry default (V3).** Empty `Format.Colorimetry` defaults to `BT709` so
+  the Required §7.2 parameter is always present; chosen over returning an error to
+  keep `FMTP` total.
+- **TTML codecs profile (T1).** Default processor profile is `im2t` (IMSC 1.1
+  Text), matching the RFC 8759 §11.2.1 example SDP; the fmtp value is emitted with
+  a bare `;` separator (no space) to match the normative example exactly.
+
 ## Dependencies
 
 - **Zero external dependencies.** Everything is built on the Go standard library.
