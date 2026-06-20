@@ -35,8 +35,14 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
       headers (DID/SDID/DC/UDW + checksum), SDP (`smpte291`, `DID_SDID`).
 - [x] 7. **ST 2110-21** — sender timing models (N / NL / W): traffic-shaping
       parameters, TROFF / CMAX / etc., compliance helpers.
-- [ ] 8. **ST 2110-31 / -22 / -41 / -43** — AES3 transparent, constant-bitrate
-      compressed video, fast metadata, timed text. (spec dependent)
+- [x] 8. **ST 2110-31 / -22 / -41 / -43** — AES3 transparent (`aes3`),
+      constant-bitrate compressed video (`cv22`), fast metadata (`fastmeta`),
+      timed text / TTML (`ttml`).
+
+## Remaining refinements (post-roadmap)
+
+- [ ] Interlaced / PsF support in `st2110/video` (Frame.Pack/Unpack + per-field
+      RTP timestamps), replacing the skipped test in roundtrip_test.go.
 
 See `DECISIONS.md` for non-obvious engineering decisions and `PROGRESS.md` for the
 running log and the next concrete step.

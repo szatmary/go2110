@@ -4,23 +4,23 @@ A running log so a fresh VM can continue. Newest entry on top.
 
 ## Current state
 
-- Roadmap items 1–7 complete: `rtp`, `sdp`, `st2110/media`, `st2110/video`
-  (2110-20), `st2110/audio` (2110-30), `st2110/anc` (2110-40), `st2110/timing21`
-  (2110-21). All build, vet clean, pass tests on `main`.
-- Video: **progressive** packetize/depacketize for 4:2:2 (8/10/12/16), 4:4:4,
-  RGB, 4:2:0 (8/10/12), Key, GPM+BPM, bit-exact. Interlaced/PsF is the known gap.
-- ANC follows RFC 8331; byte-exact test vector for the payload + 10-bit words.
-- timing21: exact-integer VRXFULL/CMAX for N/NL/W (verified on a 1080p50 vector),
-  gapped/linear PRS, leaky-bucket (CINST) + VRX compliance simulators.
+- **Entire roadmap (items 1–8) complete.** All 11 packages build, vet clean, and
+  pass tests on `main`:
+  - `rtp` (RFC 3550 + RFC 8285), `sdp` (RFC 4566 + RFC 7273 2110 attributes).
+  - `st2110/media` (timing), `st2110/video` (2110-20), `st2110/audio` (2110-30),
+    `st2110/anc` (2110-40 / RFC 8331), `st2110/timing21` (2110-21),
+    `st2110/aes3` (2110-31), `st2110/cv22` (2110-22), `st2110/fastmeta`
+    (2110-41), `st2110/ttml` (2110-43 / RFC 8759).
 
-## Next concrete step
+## Known gaps / next refinements
 
-- Roadmap item 8: ST 2110-31 (AES3 transparent), -22 (CBR compressed video),
-  -41 (fast metadata), -43 (timed text). These specs are not yet cached under
-  spec/ — download from pub.smpte.org first (see the download recipe in the
-  run log of Run 1). -31 is the most self-contained; start there.
-- Also: add interlaced/PsF support to `st2110/video` (Frame.Pack/Unpack +
-  per-field timestamps), replacing the skipped test.
+- `st2110/video`: interlaced/PsF packing is not implemented (progressive only).
+  Add Frame.Pack/Unpack interlaced paths + per-field timestamps; replace the
+  skipped test in video/roundtrip_test.go.
+- `cv22`/`ttml`/`fastmeta` carry framework + SDP; the inner codec payloads (JPEG
+  XS RFC 9134, VC-2) are intentionally out of scope of the 2110 framework specs.
+- Possible additions: RTCP sender reports, ST 2022-7 redundancy helpers,
+  higher-level stream send/receive over UDP sockets.
 
 ## Run log
 

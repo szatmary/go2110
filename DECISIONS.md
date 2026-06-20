@@ -15,7 +15,33 @@ Non-obvious decisions made while implementing go2110. Newest on top.
   - `st2110/media` — timing model shared by all essence types (RTP clock, media
     clock, frame-rate tick math).
   - `st2110/video` (ST 2110-20), `st2110/audio` (ST 2110-30),
-    `st2110/anc` (ST 2110-40), `st2110/timing21` (ST 2110-21).
+    `st2110/anc` (ST 2110-40), `st2110/timing21` (ST 2110-21),
+    `st2110/aes3` (ST 2110-31), `st2110/cv22` (ST 2110-22),
+    `st2110/fastmeta` (ST 2110-41), `st2110/ttml` (ST 2110-43).
+
+## Framework standards (-22, -41, -43)
+
+- ST 2110-22 (compressed video), -41 (fast metadata), and -43 (timed text) are
+  transport/SDP frameworks: -22 wraps an external compressed codec (JPEG XS,
+  VC-2), -43 defers the wire format to RFC 8759, and -41 carries opaque Data
+  Item Packages. The packages therefore implement the framework's own payload
+  header / SDP exactly, and treat the inner codec/data-item *contents* as opaque
+  bytes — faithful to what the standards actually define.
+
+## 2110-21 numerics
+
+- VRXFULL / CMAX use exact integer arithmetic (the standard's INT() == floor),
+  computed from the frame-rate rational, so results land on the correct side of
+  the floor boundary without floating-point error. The leaky-bucket (CINST) and
+  Virtual Receiver Buffer simulators use float64 time, which is adequate for
+  compliance checking of emission-time sequences.
+
+## ANC / AES3 / video bit packing
+
+- ANC 10-bit ST 291-1 words, AES3 AM824 subframes, and video pgroup samples are
+  all serialized MSB-first into a contiguous bitstream; each package has a small
+  bit reader/writer (or reuses the pattern) so the wire layout matches the spec
+  figures exactly.
 
 Rationale: `rtp` and `sdp` are reusable RFC building blocks with no SMPTE
 coupling; the `st2110/*` packages layer the standard's constraints on top. This
